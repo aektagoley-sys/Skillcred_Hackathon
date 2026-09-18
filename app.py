@@ -14,7 +14,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 ALLOWED = {".txt", ".pdf", ".md", ".json"}
 
 # ----------------------------------------------------------------------
-# PRESET HACKATHON DEMO SCENARIOS
+# PRESET SAMPLE POLICIES
 # ----------------------------------------------------------------------
 PRESETS = {
     "hr_policy": {
@@ -121,7 +121,7 @@ Scholars in their junior or senior year must commit 5 hours per week to departme
     },
     "fintech_loan": {
         "id": "fintech_loan",
-        "title": "Fintech Micro-Lending & Credit Agreement",
+        "title": "Consumer Loan & Credit Agreement",
         "subtitle": "Terms v3.4 vs v4.0 — APR interest shifts, grace periods, penalty clauses & arbitration",
         "category": "Fintech & Banking",
         "old_title": "Lending Terms v3.4",
@@ -163,8 +163,8 @@ All disputes, claims, and controversies arising under this agreement must be res
     },
     "saas_privacy": {
         "id": "saas_privacy",
-        "title": "Enterprise Cloud SaaS Terms of Service & Privacy",
-        "subtitle": "2024 vs 2026 — AI model training opt-out, data retention window & liability caps",
+        "title": "Enterprise Cloud SaaS Terms & Privacy",
+        "subtitle": "2024 vs 2026 — AI model training, data retention window & liability caps",
         "category": "Cloud & Privacy",
         "old_title": "SaaS Terms 2024",
         "new_title": "SaaS Terms 2026",
@@ -260,7 +260,6 @@ def split_sections(text):
     return sections
 
 # ----------------------------------------------------------------------
-# ENTITY & VALUE EXTRACTION WITH DELTA CALCULATION
 # ----------------------------------------------------------------------
 def extract_values(text):
     if not text:
@@ -358,7 +357,7 @@ def compute_value_deltas(old_values, new_values):
     return deltas
 
 # ----------------------------------------------------------------------
-# SEMANTIC CATEGORIZATION & RISK SCORING
+# CATEGORIZATION & PLAIN-ENGLISH SUMMARIES
 # ----------------------------------------------------------------------
 CATEGORY_KEYWORDS = {
     "Financial": ["fee", "fees", "cost", "salary", "stipend", "reimbursement", "price", "charge", "charges", "penalty", "penalties", "interest", "apr", "deposit", "allowance", "waiver", "tuition", "payroll", "deducted", "currency", "₹", "$", "eur", "gbp", "inr", "usd", "monetary", "award", "grant"],
@@ -382,45 +381,45 @@ def classify_category(title, old_text, new_text):
 
 def analyze_risk_and_strictness(category, change_type, old_text, new_text, deltas):
     if change_type == "Unchanged":
-        return {"level": "None", "badge": "Unchanged", "score": 0, "sentiment": "neutral", "reason": "No modifications detected."}
+        return {"level": "None", "badge": "Unchanged", "score": 0, "sentiment": "neutral", "reason": "No changes in this section."}
         
     combined = f"{old_text} {new_text}".lower()
     
-    # Check for favorable indicators first
+    # Check for favorable indicators
     for delta in deltas:
         if delta["type"] == "money" and any(k in combined for k in ["waiver", "stipend", "grant", "reimbursement", "allowance"]) and delta["direction"] == "increased":
-            return {"level": "Favorable", "badge": "Favorable 🟢", "score": -10, "sentiment": "favorable", "reason": f"Beneficial grant or allowance increased: {delta['description']}"}
+            return {"level": "Favorable", "badge": "Favorable Shift", "score": -10, "sentiment": "favorable", "reason": f"Allowance / benefit increased: {delta['description']}"}
         if delta["type"] == "duration" and "remote" in combined and delta["direction"] == "increased":
-            return {"level": "Favorable", "badge": "Favorable 🟢", "score": -10, "sentiment": "favorable", "reason": f"Work from home / flexibility extended: {delta['description']}"}
+            return {"level": "Favorable", "badge": "Favorable Shift", "score": -10, "sentiment": "favorable", "reason": f"Remote work flexibility expanded: {delta['description']}"}
             
-    # Check for high risk conditions
+    # Check for high impact / strict conditions
     if "arbitration" in new_text.lower() and "arbitration" not in old_text.lower():
-        return {"level": "High", "badge": "High Risk 🔴", "score": 85, "sentiment": "restrictive", "reason": "Mandatory binding arbitration clause added, waiving court/class action rights."}
+        return {"level": "High", "badge": "High Impact", "score": 85, "sentiment": "restrictive", "reason": "Mandatory arbitration clause added."}
         
     if "ai training" in new_text.lower() or "telemetry" in new_text.lower():
-        return {"level": "High", "badge": "High Risk 🔴", "score": 75, "sentiment": "restrictive", "reason": "AI model training on customer telemetry/data introduced."}
+        return {"level": "High", "badge": "High Impact", "score": 75, "sentiment": "restrictive", "reason": "Data usage for AI model training introduced."}
         
     for delta in deltas:
         if delta["type"] == "money" and delta["direction"] == "increased" and any(k in combined for k in ["fee", "penalty", "apr", "cost", "rate", "origination"]):
-            return {"level": "High", "badge": "High Risk 🔴", "score": 80, "sentiment": "restrictive", "reason": f"Financial fee or penalty rate increased: {delta['description']}"}
+            return {"level": "High", "badge": "High Impact", "score": 80, "sentiment": "restrictive", "reason": f"Cost or penalty increased: {delta['description']}"}
         if delta["type"] == "duration" and delta["direction"] == "decreased" and any(k in combined for k in ["grace period", "retention", "deadline", "turnaround"]):
-            return {"level": "High", "badge": "High Risk 🔴", "score": 70, "sentiment": "restrictive", "reason": f"Grace period or data retention timeline shortened: {delta['description']}"}
+            return {"level": "High", "badge": "High Impact", "score": 70, "sentiment": "restrictive", "reason": f"Timeline or grace period shortened: {delta['description']}"}
         if delta["type"] in {"percentage", "score_or_gpa", "duration"} and delta["direction"] == "increased" and any(k in combined for k in ["attendance", "gpa", "probation", "service", "community service"]):
-            return {"level": "High", "badge": "High Risk 🔴", "score": 65, "sentiment": "restrictive", "reason": f"Eligibility barrier or service requirement tightened: {delta['description']}"}
+            return {"level": "High", "badge": "High Impact", "score": 65, "sentiment": "restrictive", "reason": f"Eligibility requirement tightened: {delta['description']}"}
             
     if change_type == "Removed" and category in {"Legal & Governance", "Financial"}:
-        return {"level": "High", "badge": "High Risk 🔴", "score": 75, "sentiment": "restrictive", "reason": f"Critical {category} protection clause removed."}
+        return {"level": "High", "badge": "High Impact", "score": 75, "sentiment": "restrictive", "reason": f"Previous {category} section was removed."}
         
-    if change_type == "Added" and any(k in new_text.lower() for k in ["verification", "mandatory", "obligation", "biometric", "assistantship"]):
-        return {"level": "Medium", "badge": "Medium Risk 🟡", "score": 50, "sentiment": "restrictive", "reason": "New compliance obligation or verification requirement introduced."}
+    if change_type == "Added":
+        return {"level": "Medium", "badge": "New Section", "score": 50, "sentiment": "neutral", "reason": f"New section added to the policy."}
         
     if category in {"Financial", "Timeline", "Eligibility"}:
-        return {"level": "Medium", "badge": "Medium Risk 🟡", "score": 45, "sentiment": "neutral", "reason": f"{category} parameters adjusted between revisions."}
+        return {"level": "Medium", "badge": "Moderate Change", "score": 45, "sentiment": "neutral", "reason": f"{category} details modified."}
         
-    return {"level": "Low", "badge": "Low Risk ⚪", "score": 20, "sentiment": "neutral", "reason": "Minor editorial or operational wording revision."}
+    return {"level": "Low", "badge": "Editorial Update", "score": 20, "sentiment": "neutral", "reason": "Wording update without major parameter shifts."}
 
 # ----------------------------------------------------------------------
-# TOKEN-LEVEL & WORD-LEVEL VISUAL DIFF ENGINE
+# WORD-LEVEL VISUAL REDLINE ENGINE
 # ----------------------------------------------------------------------
 def generate_token_diff(old_text, new_text):
     old_words = re.findall(r"\S+|\n", old_text)
@@ -506,87 +505,57 @@ def synthesize_summary(change_type, category, deltas, old_text, new_text):
     if deltas:
         delta_descs = [d["description"] for d in deltas if d.get("description")]
         if delta_descs:
-            return f"Key entity shift in {category}: {'; '.join(delta_descs)}."
+            return f"Values changed: {'; '.join(delta_descs)}."
             
     if change_type == "Added":
-        return f"New {category.lower()} clause introduced into policy."
+        return f"New section added to the revised policy."
     if change_type == "Removed":
-        return f"Previous {category.lower()} clause decommissioned/removed."
+        return f"This section was removed in the revised policy."
     if change_type == "Modified":
-        return f"Updated contractual terminology and requirements in {category.lower()} section."
-    return "No verified substantive policy changes."
+        return f"Text was updated between the two versions."
+    return "No substantive changes found."
 
 # ----------------------------------------------------------------------
-# EXECUTIVE AI BRIEFING GENERATOR
+# EXECUTIVE SUMMARY
 # ----------------------------------------------------------------------
 def generate_executive_briefing(section_results, all_deltas, summary_counts):
     takeaways = []
-    stakeholders = set()
-    action_items = []
     
-    high_risks = [s for s in section_results if s["risk"]["level"] == "High"]
+    high_impact = [s for s in section_results if s["risk"]["level"] == "High"]
     favorable = [s for s in section_results if s["risk"]["level"] == "Favorable"]
+    moderate = [s for s in section_results if s["risk"]["level"] == "Medium" and s["deltas"]]
     
-    for hr in high_risks:
+    for item in high_impact:
         takeaways.append({
-            "title": hr["title_new"] if hr["title_new"] != "—" else hr["title_old"],
-            "risk": hr["risk"]["badge"],
-            "text": hr["risk"]["reason"],
-            "category": hr["category"]
+            "title": item["display_title"],
+            "badge": "High Impact",
+            "type": "high",
+            "category": item["category"],
+            "summary": item["summary"]
         })
         
-    for fav in favorable:
+    for item in favorable:
         takeaways.append({
-            "title": fav["title_new"] if fav["title_new"] != "—" else fav["title_old"],
-            "risk": fav["risk"]["badge"],
-            "text": fav["risk"]["reason"],
-            "category": fav["category"]
+            "title": item["display_title"],
+            "badge": "Favorable",
+            "type": "favorable",
+            "category": item["category"],
+            "summary": item["summary"]
         })
-        
-    categories_present = set(s["category"] for s in section_results if s["status"] != "Unchanged")
-    if "Financial" in categories_present:
-        stakeholders.add("Finance & Billing")
-        action_items.append("Update financial rate sheets, payment gateway settings, and accounting disclosures.")
-    if "Timeline" in categories_present:
-        stakeholders.add("Operations & Applicants")
-        action_items.append("Notify all active candidates/users regarding new strict deadline and turnaround windows.")
-    if "Eligibility" in categories_present:
-        stakeholders.add("HR & Admissions Committee")
-        action_items.append("Adjust candidate evaluation rubrics to match updated eligibility thresholds.")
-    if "Legal & Governance" in categories_present:
-        stakeholders.add("Legal & Compliance Counsel")
-        action_items.append("Review mandatory arbitration and data governance clauses for jurisdictional compliance.")
-    if "Operational" in categories_present:
-        stakeholders.add("Administrative Support")
-        action_items.append("Deploy updated verification checklists and application forms.")
 
-    if not section_results:
-        volatility_score = 0
-    else:
-        total_risk_points = sum(s["risk"]["score"] for s in section_results)
-        modified_ratio = (summary_counts["modified"] + summary_counts["added"] + summary_counts["removed"]) / max(1, len(section_results))
-        volatility_score = min(100, int((total_risk_points / max(1, len(section_results))) * 0.7 + (modified_ratio * 30)))
-
-    restrictive_count = sum(1 for s in section_results if s["risk"]["sentiment"] == "restrictive")
-    favorable_count = sum(1 for s in section_results if s["risk"]["sentiment"] == "favorable")
-    
-    if restrictive_count > favorable_count:
-        strictness_verdict = "Strictness Increased (More Restrictive) 🔺"
-        strictness_class = "strict-high"
-    elif favorable_count > restrictive_count:
-        strictness_verdict = "Policy Relaxed (More Favorable) 🟢"
-        strictness_class = "strict-favorable"
-    else:
-        strictness_verdict = "Balanced & Editorial Neutral ⚖️"
-        strictness_class = "strict-neutral"
+    for item in moderate:
+        takeaways.append({
+            "title": item["display_title"],
+            "badge": "Updated",
+            "type": "moderate",
+            "category": item["category"],
+            "summary": item["summary"]
+        })
 
     return {
-        "volatility_score": volatility_score,
-        "strictness_verdict": strictness_verdict,
-        "strictness_class": strictness_class,
         "takeaways": takeaways[:6],
-        "stakeholders": list(stakeholders) if stakeholders else ["General Policyholders", "Compliance Administrators"],
-        "action_items": action_items[:4] if action_items else ["Archive previous policy version for audit compliance."]
+        "total_sections": len(section_results),
+        "total_changes": summary_counts["total_changes"]
     }
 
 # ----------------------------------------------------------------------
@@ -611,8 +580,8 @@ def compare():
         data = request.get_json()
         old_text = data.get("old_text", "")
         new_text = data.get("new_text", "")
-        old_filename = data.get("old_filename", "Version 1.0")
-        new_filename = data.get("new_filename", "Version 2.0")
+        old_filename = data.get("old_filename", "Original Version")
+        new_filename = data.get("new_filename", "Revised Version")
     else:
         old_file = request.files.get("old_file")
         new_file = request.files.get("new_file")
@@ -622,8 +591,8 @@ def compare():
         if raw_old and raw_new:
             old_text = raw_old
             new_text = raw_new
-            old_filename = request.form.get("old_title", "Document v1")
-            new_filename = request.form.get("new_title", "Document v2")
+            old_filename = request.form.get("old_title", "Original Version")
+            new_filename = request.form.get("new_title", "Revised Version")
         elif old_file and new_file:
             old_filename = old_file.filename
             new_filename = new_file.filename
@@ -639,13 +608,13 @@ def compare():
             except Exception as e:
                 return jsonify({"error": str(e)}), 400
         else:
-            return jsonify({"error": "Please provide both old and new policy documents (upload files or paste text)."}), 400
+            return jsonify({"error": "Please provide both the original and revised policy documents."}), 400
 
     old_text = clean(old_text)
     new_text = clean(new_text)
     
     if not old_text or not new_text:
-        return jsonify({"error": "One or both documents are empty. Please check your input."}), 400
+        return jsonify({"error": "One or both documents are empty. Please check your files or text."}), 400
 
     old_sections = split_sections(old_text)
     new_sections = split_sections(new_text)
@@ -724,7 +693,7 @@ def compare():
             risk = analyze_risk_and_strictness(category, status, old_sec["text"], "", deltas)
             diff_html = {
                 "old_html": f'<del class="diff-del">{escape_html(old_sec["text"])}</del>',
-                "new_html": '<span class="diff-empty">— Section Not Present in New Policy —</span>',
+                "new_html": '<span class="diff-empty">— Section Removed from Revised Policy —</span>',
                 "unified_html": f'<del class="diff-del">{escape_html(old_sec["text"])}</del>'
             }
             summary_desc = synthesize_summary(status, category, deltas, old_sec["text"], "")
@@ -758,7 +727,7 @@ def compare():
             all_deltas.extend(deltas)
             risk = analyze_risk_and_strictness(category, status, "", new_sec["text"], deltas)
             diff_html = {
-                "old_html": '<span class="diff-empty">— Section Not Present in Previous Policy —</span>',
+                "old_html": '<span class="diff-empty">— Section Added in Revised Policy —</span>',
                 "new_html": f'<ins class="diff-ins">{escape_html(new_sec["text"])}</ins>',
                 "unified_html": f'<ins class="diff-ins">{escape_html(new_sec["text"])}</ins>'
             }
@@ -805,16 +774,13 @@ def export_csv():
     output = io.StringIO()
     writer = csv.writer(output)
     
-    writer.writerow(["Section ID", "Section Title", "Category", "Status", "Risk Level", "Match Similarity (%)", "Executive Summary", "Old Text", "New Text"])
+    writer.writerow(["Section", "Category", "Status", "Change Summary", "Original Text", "Revised Text"])
     
     for sec in data["sections"]:
         writer.writerow([
-            sec.get("id", ""),
             sec.get("display_title", sec.get("title_new", "")),
             sec.get("category", ""),
             sec.get("status", ""),
-            sec.get("risk", {}).get("level", ""),
-            sec.get("similarity", 0),
             sec.get("summary", ""),
             sec.get("old_text", "").replace("\n", " "),
             sec.get("new_text", "").replace("\n", " ")
@@ -824,9 +790,8 @@ def export_csv():
     return Response(
         output.getvalue(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=PolicyLens_Audit_Report.csv"}
+        headers={"Content-Disposition": "attachment; filename=Policy_Comparison_Report.csv"}
     )
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-    # garvit was here
