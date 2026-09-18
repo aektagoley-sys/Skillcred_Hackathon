@@ -50,11 +50,3 @@ Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** in your browser.
 
 ---
 
-## 💡 How to Demo for Hackathon Judges in 60 Seconds
-
-1. Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)**.
-2. Click any of the **1-Click Hackathon Scenarios** at the top (e.g. *Fintech Loan Terms* or *Corporate HR*).
-3. Click **"Run Deep Policy Comparison & Risk Analysis"**.
-4. Highlight the **Policy Volatility Index (72/100)** and **Strictness Verdict**.
-5. Switch between **Side-by-Side Clause Diff**, **Unified Redline**, and **Numerical Delta Ledger** to show token-level redlining and mathematical `%` shifts.
-6. Click **"Export CSV Audit"** or **"Print / Export PDF"** to demonstrate enterprise readiness.
