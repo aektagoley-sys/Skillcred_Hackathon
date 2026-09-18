@@ -1,18 +1,19 @@
 // ==========================================================================
-// POLICYLENS 2.0 — FRONTEND CONTROLLER & INTERACTIVE DIFF ENGINE
+// POLICYLENS — FRONTEND CONTROLLER & CHANGE RENDERER
 // ==========================================================================
 
 let presetsData = {};
 let currentResults = null;
-let activePresetKey = "hr_policy";
 let activeInputMode = "files"; // 'files' or 'text'
-let activeViewMode = "sideBySide";
-
-let filterCategory = "all";
-let filterRisk = "all";
+let activeCategoryFilter = "all";
 let searchQuery = "";
 
-// DOM ELEMENTS
+// DOM Elements
+const tabFiles = document.getElementById("tabFiles");
+const tabText = document.getElementById("tabText");
+const fileUploadContainer = document.getElementById("fileUploadContainer");
+const textEditorContainer = document.getElementById("textEditorContainer");
+
 const dropzoneOld = document.getElementById("dropzoneOld");
 const dropzoneNew = document.getElementById("dropzoneNew");
 const oldFileInput = document.getElementById("oldFileInput");
@@ -21,11 +22,6 @@ const oldFileName = document.getElementById("oldFileName");
 const newFileName = document.getElementById("newFileName");
 const oldFileSize = document.getElementById("oldFileSize");
 const newFileSize = document.getElementById("newFileSize");
-
-const tabFiles = document.getElementById("tabFiles");
-const tabText = document.getElementById("tabText");
-const fileUploadContainer = document.getElementById("fileUploadContainer");
-const textEditorContainer = document.getElementById("textEditorContainer");
 
 const rawOldText = document.getElementById("rawOldText");
 const rawNewText = document.getElementById("rawNewText");
@@ -36,12 +32,18 @@ const compareBtn = document.getElementById("compareBtn");
 const errorMessage = document.getElementById("errorMessage");
 const loadingState = document.getElementById("loadingState");
 const resultsSection = document.getElementById("resultsSection");
-const scenarioIndicator = document.getElementById("scenarioIndicator");
-
 const presetButtons = document.getElementById("presetButtons");
+
+const labelOldDoc = document.getElementById("labelOldDoc");
+const labelNewDoc = document.getElementById("labelNewDoc");
+const totalChanges = document.getElementById("totalChanges");
+const modifiedCount = document.getElementById("modifiedCount");
+const addedCount = document.getElementById("addedCount");
+const removedCount = document.getElementById("removedCount");
+const executiveTakeaways = document.getElementById("executiveTakeaways");
+
 const searchInput = document.getElementById("searchInput");
 const categoryChips = document.getElementById("categoryChips");
-const riskChips = document.getElementById("riskChips");
 
 const btnExportCsv = document.getElementById("btnExportCsv");
 const btnPrintReport = document.getElementById("btnPrintReport");
@@ -66,6 +68,7 @@ function setupTabs() {
     fileUploadContainer.classList.add("active");
     textEditorContainer.classList.remove("active");
   };
+
   tabText.onclick = () => {
     activeInputMode = "text";
     tabText.classList.add("active");
@@ -81,15 +84,15 @@ function setupDragAndDrop() {
     { zone: dropzoneOld, input: oldFileInput, name: oldFileName, size: oldFileSize },
     { zone: dropzoneNew, input: newFileInput, name: newFileName, size: newFileSize }
   ].forEach(({ zone, input, name, size }) => {
-    ["dragenter", "dragover"].forEach(eventName => {
-      zone.addEventListener(eventName, e => {
+    ["dragenter", "dragover"].forEach(ev => {
+      zone.addEventListener(ev, e => {
         e.preventDefault();
         zone.classList.add("dragover");
       });
     });
 
-    ["dragleave", "drop"].forEach(eventName => {
-      zone.addEventListener(eventName, e => {
+    ["dragleave", "drop"].forEach(ev => {
+      zone.addEventListener(ev, e => {
         e.preventDefault();
         zone.classList.remove("dragover");
       });
@@ -98,22 +101,22 @@ function setupDragAndDrop() {
     zone.addEventListener("drop", e => {
       if (e.dataTransfer.files.length) {
         input.files = e.dataTransfer.files;
-        updateFileDisplay(input.files[0], name, size);
+        updateFileTag(input.files[0], name, size);
       }
     });
 
     input.addEventListener("change", () => {
       if (input.files.length) {
-        updateFileDisplay(input.files[0], name, size);
+        updateFileTag(input.files[0], name, size);
       }
     });
   });
 }
 
-function updateFileDisplay(file, nameEl, sizeEl) {
+function updateFileTag(file, nameEl, sizeEl) {
   if (!file) return;
   nameEl.textContent = file.name;
-  sizeEl.textContent = formatBytes(file.size);
+  sizeEl.textContent = `(${formatBytes(file.size)})`;
 }
 
 function formatBytes(bytes) {
@@ -124,26 +127,25 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 }
 
-// TEXT EDITORS LIVE CHAR COUNTERS
+// TEXT EDITORS COUNTER
 function setupTextCounters() {
   const updateCounts = () => {
-    oldCharCount.textContent = `${rawOldText.value.length} chars (${rawOldText.value.split(/\s+/).filter(Boolean).length} words)`;
-    newCharCount.textContent = `${rawNewText.value.length} chars (${rawNewText.value.split(/\s+/).filter(Boolean).length} words)`;
+    oldCharCount.textContent = `${rawOldText.value.length} chars`;
+    newCharCount.textContent = `${rawNewText.value.length} chars`;
   };
   rawOldText.addEventListener("input", updateCounts);
   rawNewText.addEventListener("input", updateCounts);
 }
 
-// LOAD DEMO PRESETS
+// LOAD SAMPLE PRESETS
 async function loadPresets() {
   try {
     const res = await fetch("/api/presets");
     presetsData = await res.json();
     setupPresetButtons();
-    // Select default preset
     selectPreset("hr_policy", true);
   } catch (err) {
-    console.error("Failed to load presets:", err);
+    console.error("Failed to load sample presets:", err);
   }
 }
 
@@ -161,30 +163,23 @@ function setupPresetButtons() {
 function selectPreset(key, autoRun = false) {
   const preset = presetsData[key];
   if (!preset) return;
-  activePresetKey = key;
 
-  scenarioIndicator.innerHTML = `<span class="loaded-scenario-text">Loaded Scenario: <strong>${escapeHtml(preset.title)}</strong></span>`;
-  
-  // Populate textareas
   rawOldText.value = preset.old_text;
   rawNewText.value = preset.new_text;
   oldFileName.textContent = `${preset.old_title}.txt`;
   newFileName.textContent = `${preset.new_title}.txt`;
-  oldFileSize.textContent = "Demo Preset";
-  newFileSize.textContent = "Demo Preset";
+  oldFileSize.textContent = "(Sample ready)";
+  newFileSize.textContent = "(Sample ready)";
 
-  const updateCounts = () => {
-    oldCharCount.textContent = `${rawOldText.value.length} chars`;
-    newCharCount.textContent = `${rawNewText.value.length} chars`;
-  };
-  updateCounts();
+  oldCharCount.textContent = `${rawOldText.value.length} chars`;
+  newCharCount.textContent = `${rawNewText.value.length} chars`;
 
   if (autoRun) {
     runComparison();
   }
 }
 
-// EXECUTE COMPARISON
+// RUN COMPARISON
 compareBtn.onclick = runComparison;
 
 async function runComparison() {
@@ -195,30 +190,27 @@ async function runComparison() {
   let isFormData = false;
 
   if (activeInputMode === "files" && oldFileInput.files[0] && newFileInput.files[0]) {
-    // Real file upload mode
     const fd = new FormData();
     fd.append("old_file", oldFileInput.files[0]);
     fd.append("new_file", newFileInput.files[0]);
     payload = fd;
     isFormData = true;
   } else {
-    // Direct text / Preset mode
     const oldT = rawOldText.value.trim();
     const newT = rawNewText.value.trim();
     if (!oldT || !newT) {
-      errorMessage.textContent = "Please upload files or paste text in both baseline and revised policy fields.";
+      errorMessage.textContent = "Please upload documents or paste text into both input areas.";
       errorMessage.classList.remove("hidden");
       return;
     }
     payload = JSON.stringify({
       old_text: oldT,
       new_text: newT,
-      old_filename: oldFileName.textContent || "Baseline v1",
-      new_filename: newFileName.textContent || "Proposed v2"
+      old_filename: oldFileName.textContent || "Original Policy",
+      new_filename: newFileName.textContent || "Revised Policy"
     });
   }
 
-  // Show loading
   loadingState.classList.remove("hidden");
   resultsSection.classList.add("hidden");
 
@@ -235,7 +227,7 @@ async function runComparison() {
     const data = await res.json();
 
     if (!res.ok) {
-      throw new Error(data.error || "Failed to compare policy documents.");
+      throw new Error(data.error || "Comparison failed.");
     }
 
     currentResults = data;
@@ -249,83 +241,52 @@ async function runComparison() {
   }
 }
 
-// RENDER RESULTS DASHBOARD
+// RENDER RESULTS
 function renderResults(data) {
   resultsSection.classList.remove("hidden");
 
-  // 1. Render Scorecard & Volatility
-  const briefing = data.executive_briefing || {};
+  // Overview Header
+  labelOldDoc.textContent = data.old_filename || "Original Policy";
+  labelNewDoc.textContent = data.new_filename || "Revised Policy";
+
   const summary = data.summary || {};
+  totalChanges.textContent = summary.total_changes || 0;
+  modifiedCount.textContent = summary.modified || 0;
+  addedCount.textContent = summary.added || 0;
+  removedCount.textContent = summary.removed || 0;
 
-  const scoreEl = document.getElementById("volatilityScore");
-  const fillEl = document.getElementById("volatilityFill");
-  const strictBadge = document.getElementById("strictnessBadge");
+  // Key Takeaways
+  const takeaways = data.executive_briefing?.takeaways || [];
+  executiveTakeaways.innerHTML = "";
 
-  const score = briefing.volatility_score || 0;
-  scoreEl.textContent = score;
-  fillEl.style.width = `${Math.max(5, score)}%`;
-
-  strictBadge.textContent = briefing.strictness_verdict || "Balanced";
-  strictBadge.className = `strictness-badge ${briefing.strictness_class || "strict-neutral"}`;
-
-  // 2. Render KPIs
-  document.getElementById("totalChanges").textContent = summary.total_changes || 0;
-  document.getElementById("highRiskCount").textContent = summary.high_risk || 0;
-  document.getElementById("modifiedCount").textContent = summary.modified || 0;
-  document.getElementById("addedCount").textContent = summary.added || 0;
-  document.getElementById("removedCount").textContent = summary.removed || 0;
-
-  // 3. Render Executive Takeaways
-  const takeawaysContainer = document.getElementById("executiveTakeaways");
-  takeawaysContainer.innerHTML = "";
-  if (briefing.takeaways && briefing.takeaways.length > 0) {
-    briefing.takeaways.forEach(t => {
-      const item = document.createElement("div");
-      const isHigh = t.risk && t.risk.includes("High");
-      const isFav = t.risk && t.risk.includes("Favorable");
-      item.className = `takeaway-item ${isHigh ? 'takeaway-high' : isFav ? 'takeaway-fav' : ''}`;
-      item.innerHTML = `
-        <div class="takeaway-head">
-          <span class="takeaway-title">${escapeHtml(t.title)}</span>
-          <span class="takeaway-badge ${isHigh ? 'strict-high' : isFav ? 'strict-favorable' : 'strict-neutral'}">${escapeHtml(t.risk)}</span>
+  if (takeaways.length > 0) {
+    takeaways.forEach(t => {
+      const row = document.createElement("div");
+      const typeClass = t.type === "high" ? "type-high" : t.type === "favorable" ? "type-favorable" : "";
+      const badgeClass = t.type === "high" ? "badge-tag-high" : t.type === "favorable" ? "badge-tag-favorable" : "badge-tag-moderate";
+      row.className = `takeaway-row ${typeClass}`;
+      row.innerHTML = `
+        <div class="takeaway-header-line">
+          <span class="takeaway-sec-name">${escapeHtml(t.title)}</span>
+          <span class="takeaway-badge-tag ${badgeClass}">${escapeHtml(t.badge)}</span>
         </div>
-        <div class="takeaway-text">${escapeHtml(t.text)}</div>
+        <div class="takeaway-body-text">${escapeHtml(t.summary)}</div>
       `;
-      takeawaysContainer.appendChild(item);
+      executiveTakeaways.appendChild(row);
     });
   } else {
-    takeawaysContainer.innerHTML = `<div class="takeaway-text" style="color: var(--text-muted);">No critical risk flags detected. Document modifications are primarily editorial.</div>`;
+    executiveTakeaways.innerHTML = `<div style="color:var(--text-muted); font-size:13px;">No major high-impact shifts detected. All changes are standard updates.</div>`;
   }
 
-  // 4. Stakeholders
-  const stakeholderTags = document.getElementById("stakeholderTags");
-  stakeholderTags.innerHTML = "";
-  (briefing.stakeholders || []).forEach(sh => {
-    const tag = document.createElement("span");
-    tag.className = "stakeholder-tag";
-    tag.textContent = sh;
-    stakeholderTags.appendChild(tag);
-  });
-
-  // 5. Action Items
-  const actionList = document.getElementById("actionItemsList");
-  actionList.innerHTML = "";
-  (briefing.action_items || []).forEach(act => {
-    const li = document.createElement("li");
-    li.textContent = act;
-    actionList.appendChild(li);
-  });
-
-  // 6. Render Current Filtered Views
   renderActiveViews();
 }
 
-// RENDER ALL VIEWS ACCORDING TO FILTER/SEARCH
+// RENDER VIEWS
 function renderActiveViews() {
   if (!currentResults || !currentResults.sections) return;
 
   const filtered = currentResults.sections.filter(sec => {
-    // Search query match
+    // Search query
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       const matchTitle = (sec.display_title || "").toLowerCase().includes(q);
@@ -335,34 +296,26 @@ function renderActiveViews() {
       if (!matchTitle && !matchOld && !matchNew && !matchSumm) return false;
     }
 
-    // Category match
-    if (filterCategory !== "all" && sec.category !== filterCategory) {
-      return false;
-    }
-
-    // Risk match
-    if (filterRisk !== "all" && sec.risk.level !== filterRisk) {
+    // Category filter
+    if (activeCategoryFilter !== "all" && sec.category !== activeCategoryFilter) {
       return false;
     }
 
     return true;
   });
 
-  document.getElementById("showingCount").textContent = `Showing ${filtered.length} of ${currentResults.sections.length} clauses`;
-
-  renderSideBySideView(filtered);
-  renderUnifiedRedlineView(filtered);
-  renderChangeMatrixView(filtered);
-  renderDeltasLedgerView(currentResults.all_deltas || []);
+  renderSideBySide(filtered);
+  renderSummaryTable(filtered);
+  renderDeltaLedger(currentResults.all_deltas || []);
 }
 
 // 1. SIDE-BY-SIDE RENDERER
-function renderSideBySideView(sections) {
+function renderSideBySide(sections) {
   const container = document.getElementById("clauseCardsContainer");
   container.innerHTML = "";
 
   if (sections.length === 0) {
-    container.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">No clauses matched your active filter criteria.</div>`;
+    container.innerHTML = `<div class="card" style="text-align:center; padding:32px; color:var(--text-muted);">No sections match the current filter.</div>`;
     return;
   }
 
@@ -370,177 +323,121 @@ function renderSideBySideView(sections) {
     const card = document.createElement("div");
     card.className = "clause-card";
 
-    const isHigh = sec.risk?.level === "High";
-    const isFav = sec.risk?.level === "Favorable";
-    const riskBadgeClass = isHigh ? "strict-high" : isFav ? "strict-favorable" : "strict-neutral";
-
-    const deltaPillsHtml = (sec.deltas || []).map(d => {
-      const cls = d.direction === "increased" ? "delta-increased" : d.direction === "decreased" ? "delta-decreased" : "";
-      return `<span class="delta-pill ${cls}">${escapeHtml(d.description)}</span>`;
+    const deltaPills = (sec.deltas || []).map(d => {
+      const cls = d.direction === "increased" ? "increased" : d.direction === "decreased" ? "decreased" : "";
+      return `<span class="val-pill ${cls}">${escapeHtml(d.description)}</span>`;
     }).join("");
 
     card.innerHTML = `
-      <div class="clause-card-header">
-        <div class="clause-title-group">
-          <span class="clause-title">${escapeHtml(sec.display_title)}</span>
-          <span class="category-badge">${escapeHtml(sec.category)}</span>
-        </div>
-        <div class="clause-badges">
-          <span class="status-tag ${sec.status}">${sec.status}</span>
-          <span class="strictness-badge ${riskBadgeClass}">${escapeHtml(sec.risk.badge)}</span>
-          ${sec.similarity ? `<span class="status-pill">${sec.similarity}% match</span>` : ''}
+      <div class="clause-card-top">
+        <span class="clause-card-title">${escapeHtml(sec.display_title)}</span>
+        <div class="clause-card-badges">
+          <span class="badge badge-category">${escapeHtml(sec.category)}</span>
+          <span class="badge badge-${sec.status}">${sec.status}</span>
         </div>
       </div>
-      <div class="clause-columns">
-        <div class="clause-col">
-          <div class="col-header">
-            <span>Baseline Version 1.0</span>
-          </div>
-          <div class="clause-text">${sec.diff_html ? sec.diff_html.old_html : escapeHtml(sec.old_text || "—")}</div>
+      <div class="clause-comparison-grid">
+        <div class="clause-pane">
+          <div class="pane-title">Original Version</div>
+          <div class="pane-text">${sec.diff_html ? sec.diff_html.old_html : escapeHtml(sec.old_text || "—")}</div>
         </div>
-        <div class="clause-col">
-          <div class="col-header">
-            <span>Revised Version 2.0</span>
-          </div>
-          <div class="clause-text">${sec.diff_html ? sec.diff_html.new_html : escapeHtml(sec.new_text || "—")}</div>
+        <div class="clause-pane">
+          <div class="pane-title">Revised Version</div>
+          <div class="pane-text">${sec.diff_html ? sec.diff_html.new_html : escapeHtml(sec.new_text || "—")}</div>
         </div>
       </div>
-      <div class="clause-card-footer">
-        <div class="clause-summary-line">
-          <strong>Executive Evidence:</strong> ${escapeHtml(sec.summary || "No changes.")}
-        </div>
-        ${deltaPillsHtml ? `<div class="delta-pills-row">${deltaPillsHtml}</div>` : ''}
+      <div class="clause-card-bottom">
+        <div><strong>What changed:</strong> ${escapeHtml(sec.summary || "No changes.")}</div>
+        ${deltaPills ? `<div class="values-shift-row">${deltaPills}</div>` : ''}
       </div>
     `;
     container.appendChild(card);
   });
 }
 
-// 2. UNIFIED REDLINE RENDERER
-function renderUnifiedRedlineView(sections) {
-  const container = document.getElementById("unifiedRedlineContainer");
-  container.innerHTML = "";
-
-  if (sections.length === 0) {
-    container.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-muted);">No clauses matched your active filter criteria.</div>`;
-    return;
-  }
-
-  sections.forEach(sec => {
-    const block = document.createElement("div");
-    block.className = "unified-section-block";
-    block.innerHTML = `
-      <div class="unified-section-title">
-        ${escapeHtml(sec.display_title)} 
-        <span class="status-tag ${sec.status}" style="margin-left: 8px;">${sec.status}</span>
-      </div>
-      <div class="clause-text" style="line-height: 1.7;">
-        ${sec.diff_html ? sec.diff_html.unified_html : escapeHtml(sec.new_text || sec.old_text)}
-      </div>
-    `;
-    container.appendChild(block);
-  });
-}
-
-// 3. CHANGE MATRIX TABLE RENDERER
-function renderChangeMatrixView(sections) {
+// 2. SUMMARY TABLE RENDERER
+function renderSummaryTable(sections) {
   const tbody = document.getElementById("changeMatrixBody");
   tbody.innerHTML = "";
 
   if (sections.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:30px; color:var(--text-muted);">No matching clauses found.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:24px; color:var(--text-muted);">No matching sections.</td></tr>`;
     return;
   }
 
   sections.forEach(sec => {
     const tr = document.createElement("tr");
-    const isHigh = sec.risk?.level === "High";
-    const isFav = sec.risk?.level === "Favorable";
-    const riskBadgeClass = isHigh ? "strict-high" : isFav ? "strict-favorable" : "strict-neutral";
-
     tr.innerHTML = `
-      <td><div class="table-sec-title">${escapeHtml(sec.display_title)}</div></td>
-      <td><span class="category-badge">${escapeHtml(sec.category)}</span></td>
-      <td><span class="status-tag ${sec.status}">${sec.status}</span></td>
-      <td><span class="strictness-badge ${riskBadgeClass}">${escapeHtml(sec.risk.badge)}</span></td>
-      <td><div class="table-summary-text">${escapeHtml(sec.summary)}</div></td>
+      <td><div class="table-heading">${escapeHtml(sec.display_title)}</div></td>
+      <td><span class="badge badge-category">${escapeHtml(sec.category)}</span></td>
+      <td><span class="badge badge-${sec.status}">${sec.status}</span></td>
+      <td><div>${escapeHtml(sec.summary)}</div></td>
     `;
     tbody.appendChild(tr);
   });
 }
 
-// 4. DELTAS LEDGER RENDERER
-function renderDeltasLedgerView(deltas) {
+// 3. VALUE SHIFTS TABLE RENDERER
+function renderDeltaLedger(deltas) {
   const tbody = document.getElementById("deltasLedgerBody");
   tbody.innerHTML = "";
 
   if (!deltas || deltas.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:30px; color:var(--text-muted);">No specific currency, percentage, or timeline values shifted in this comparison.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-muted);">No specific numeric or date changes found in this document.</td></tr>`;
     return;
   }
 
   deltas.forEach(d => {
     const tr = document.createElement("tr");
-    const directionIcon = d.direction === "increased" ? "🔺 Increased" : d.direction === "decreased" ? "🔻 Decreased" : d.direction === "added" ? "➕ Added" : d.direction === "removed" ? "➖ Removed" : "Changed";
+    const dir = d.direction === "increased" ? "Increased" : d.direction === "decreased" ? "Decreased" : d.direction === "added" ? "Added" : d.direction === "removed" ? "Removed" : "Modified";
 
     tr.innerHTML = `
-      <td><span class="delta-type-badge">${escapeHtml(d.type.toUpperCase())}</span></td>
-      <td><span class="delta-val-old">${escapeHtml(d.old || "—")}</span></td>
-      <td><span class="delta-arrow">➔</span></td>
-      <td><span class="delta-val-new">${escapeHtml(d.new || "—")}</span></td>
-      <td><span style="font-weight:600; font-size:12px;">${directionIcon}</span></td>
-      <td><span style="font-family:var(--font-mono); color:var(--accent-cyan); font-weight:600;">${escapeHtml(d.pct_change || "Direct Value Change")}</span></td>
+      <td><span class="badge badge-category">${escapeHtml(d.type.toUpperCase())}</span></td>
+      <td><span class="delta-old">${escapeHtml(d.old || "—")}</span></td>
+      <td>➔</td>
+      <td><span class="delta-new">${escapeHtml(d.new || "—")}</span></td>
+      <td><strong>${dir}</strong></td>
+      <td><span class="delta-shift">${escapeHtml(d.pct_change || "Value update")}</span></td>
     `;
     tbody.appendChild(tr);
   });
 }
 
-// SETUP FILTERS AND SEARCH
+// SEARCH & CATEGORY FILTERS
 function setupFiltersAndSearch() {
   searchInput.addEventListener("input", e => {
     searchQuery = e.target.value.trim();
     renderActiveViews();
   });
 
-  categoryChips.querySelectorAll(".chip").forEach(chip => {
+  categoryChips.querySelectorAll(".filter-chip").forEach(chip => {
     chip.addEventListener("click", () => {
-      categoryChips.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
+      categoryChips.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
-      filterCategory = chip.getAttribute("data-filter");
-      renderActiveViews();
-    });
-  });
-
-  riskChips.querySelectorAll(".chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      riskChips.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      filterRisk = chip.getAttribute("data-risk");
+      activeCategoryFilter = chip.getAttribute("data-filter");
       renderActiveViews();
     });
   });
 }
 
-// SETUP VIEW TABS
+// VIEW SWITCHER TABS
 function setupViewTabs() {
-  document.querySelectorAll(".view-tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".view-tab").forEach(t => t.classList.remove("active"));
+  document.querySelectorAll(".view-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".view-btn").forEach(b => b.classList.remove("active"));
       document.querySelectorAll(".view-panel").forEach(p => p.classList.remove("active"));
 
-      tab.classList.add("active");
-      const viewKey = tab.getAttribute("data-view");
-      activeViewMode = viewKey;
+      btn.classList.add("active");
+      const viewKey = btn.getAttribute("data-view");
 
       if (viewKey === "sideBySide") document.getElementById("viewSideBySide").classList.add("active");
-      if (viewKey === "unifiedRedline") document.getElementById("viewUnifiedRedline").classList.add("active");
       if (viewKey === "changeMatrix") document.getElementById("viewChangeMatrix").classList.add("active");
       if (viewKey === "deltasLedger") document.getElementById("viewDeltasLedger").classList.add("active");
     });
   });
 }
 
-// SETUP EXPORTS
+// EXPORT ACTIONS
 function setupExports() {
   btnExportCsv.addEventListener("click", async () => {
     if (!currentResults) return;
@@ -554,12 +451,12 @@ function setupExports() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `PolicyLens_Audit_${new Date().toISOString().slice(0,10)}.csv`;
+      a.download = `Policy_Comparison_${new Date().toISOString().slice(0,10)}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();
     } catch (err) {
-      alert("Failed to generate CSV export: " + err.message);
+      alert("Failed to export CSV: " + err.message);
     }
   });
 
@@ -568,7 +465,7 @@ function setupExports() {
   });
 }
 
-// UTILS
+// HTML ESCAPE
 function escapeHtml(str) {
   if (!str) return "";
   return String(str).replace(/[&<>"']/g, c => ({
